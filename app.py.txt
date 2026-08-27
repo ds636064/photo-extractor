@@ -1,0 +1,57 @@
+import streamlit as st
+import pytesseract
+from PIL import Image
+import re
+import pandas as pd
+
+def extract_information(text):
+    data = {
+        "Mobile Number": "Not Found",
+        "PIN Code": "Not Found",
+        "Name (Guessed)": "Not Found",
+        "Address (Guessed)": "Not Found",
+    }
+    
+    mobile_match = re.search(r'\b(?:\+91[-.\s]?)?[6-9]\d{9}\b', text)
+    if mobile_match:
+        data["Mobile Number"] = mobile_match.group(0)
+        
+    pin_match = re.search(r'\b\d{6}\b', text)
+    if pin_match:
+        data["PIN Code"] = pin_match.group(0)
+        
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if len(lines) > 0:
+        data["Name (Guessed)"] = lines[0]
+    if len(lines) > 1:
+        data["Address (Guessed)"] = " ".join(lines[1:min(4, len(lines))])
+        
+    return data
+
+st.set_page_config(page_title="Data Extractor", layout="wide")
+st.title("📄 Mobile Photo Data Extractor")
+
+uploaded_files = st.file_uploader("Mobile se photos upload karein", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+
+if uploaded_files:
+    if st.button("Extract Data"):
+        results = []
+        progress_bar = st.progress(0)
+        
+        for i, file in enumerate(uploaded_files):
+            try:
+                img = Image.open(file)
+                extracted_text = pytesseract.image_to_string(img)
+                info = extract_information(extracted_text)
+                info["File Name"] = file.name
+                results.append(info)
+            except Exception as e:
+                st.error(f"Error in {file.name}: {e}")
+            progress_bar.progress((i + 1) / len(uploaded_files))
+            
+        st.success("Extraction Complete!")
+        df = pd.DataFrame(results)[["File Name", "Name (Guessed)", "Mobile Number", "PIN Code", "Address (Guessed)"]]
+        st.dataframe(df)
+        
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(label="Download CSV File", data=csv, file_name='extracted_data.csv', mime='text/csv')
